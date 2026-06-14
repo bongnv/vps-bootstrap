@@ -2,33 +2,62 @@
 
 This public repository is the source of truth for the Ubuntu Server running on the MacBook Pro.
 
-The bootstrap installs:
+The setup is split into two stages:
 
-- Docker Engine and the Docker Compose plugin
-- OpenSSH server for local fallback access
-- Tailscale from Tailscale's apt repository for SSH/admin access over the tailnet
-- Portainer CE via Docker Compose
-- `cloudflared` via Docker Compose for Portainer and web app ingress
+- Stage 1: install OpenSSH and Tailscale from the MacBook console
+- Stage 2: SSH in over Tailscale, then install Docker, Portainer, and the Dockerized Cloudflare Tunnel
 
-## Bootstrap
+## Stage 1: Tailscale
 
-On the Ubuntu server:
+Run this on the Ubuntu server console:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/bongnv/vps-infra/main/scripts/bootstrap-ubuntu.sh | bash
+curl -fsSL https://raw.githubusercontent.com/bongnv/vps-infra/main/scripts/install-tailscale.sh | bash
 ```
 
-The script will ask for:
+The script will ask for a Tailscale auth key. Paste one to join the server unattended, or press Enter to use the browser login URL shown by `tailscale up`.
 
-- A Tailscale auth key. Paste one to join the server unattended, or press Enter to use the browser login URL shown by `tailscale up`.
-- A Cloudflare Tunnel token. Paste one to start the `cloudflared` container for Portainer and web apps, or press Enter to skip Cloudflare ingress.
-
-You can also pass tokens inline, but this may save them in shell history:
+You can also pass the auth key inline, but this may save it in shell history:
 
 ```bash
 TAILSCALE_AUTHKEY='<paste-tailscale-auth-key>' \
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/bongnv/vps-infra/main/scripts/install-tailscale.sh)"
+```
+
+After it joins your tailnet, SSH from another device signed in to Tailscale:
+
+```bash
+ssh <ubuntu-user>@<tailscale-ip-or-hostname>
+```
+
+By default this uses normal Ubuntu OpenSSH over the Tailscale private network. If you specifically want the Tailscale SSH feature, enable it explicitly and make sure your Tailscale ACLs allow it:
+
+```bash
+ENABLE_TAILSCALE_SSH=true \
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/bongnv/vps-infra/main/scripts/install-tailscale.sh)"
+```
+
+## Stage 2: Apps
+
+Run this from the SSH session:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/bongnv/vps-infra/main/scripts/setup-apps.sh | bash
+```
+
+The script installs:
+
+- Docker Engine and the Docker Compose plugin
+- Portainer CE via Docker Compose
+- `cloudflared` via Docker Compose for Portainer and web app ingress
+
+It will ask for a Cloudflare Tunnel token. Paste one to start the `cloudflared` container, or press Enter to skip Cloudflare ingress for now.
+
+You can also pass the token inline, but this may save it in shell history:
+
+```bash
 CLOUDFLARED_TOKEN='<paste-cloudflare-token>' \
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/bongnv/vps-infra/main/scripts/bootstrap-ubuntu.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/bongnv/vps-infra/main/scripts/setup-apps.sh)"
 ```
 
 The remote installer downloads `docker-compose.yml` to:
@@ -43,27 +72,15 @@ If you provide a Cloudflare token, the installer writes it to:
 /opt/vps-infra/.env
 ```
 
-If you have a local checkout, you can still run:
+## Compatibility Bootstrap
+
+The old all-in-one bootstrap still exists as a wrapper:
 
 ```bash
-./scripts/bootstrap-ubuntu.sh
+curl -fsSL https://raw.githubusercontent.com/bongnv/vps-infra/main/scripts/bootstrap-ubuntu.sh | bash
 ```
 
-## SSH
-
-SSH/admin access should go through Tailscale, not Cloudflare.
-
-By default this uses normal Ubuntu OpenSSH over the Tailscale private network. From another device in your tailnet:
-
-```bash
-ssh <ubuntu-user>@<tailscale-hostname>
-```
-
-If you specifically want the Tailscale SSH feature, enable it explicitly and make sure your Tailscale ACLs allow it:
-
-```bash
-ENABLE_TAILSCALE_SSH=true ./scripts/bootstrap-ubuntu.sh
-```
+Prefer the two-stage flow above so the heavier app setup happens from SSH.
 
 ## Cloudflare Routes
 
@@ -73,7 +90,7 @@ Recommended public hostnames for the tunnel:
 
 ```text
 portainer.yourdomain.com  -> https://portainer:9443
-photos.yourdomain.com     -> http://localhost:2283
+photos.yourdomain.com     -> http://<immich-service-name>:2283
 ```
 
 For Portainer, enable Cloudflare's origin setting equivalent to **No TLS Verify**, because Portainer uses a self-signed local certificate.
