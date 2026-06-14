@@ -21,7 +21,7 @@ if [[ "${EUID}" -ne 0 ]]; then
   SUDO="sudo"
 fi
 
-TARGET_USER="${SUDO_USER:-${USER}}"
+TARGET_USER="${SUDO_USER:-${USER:-root}}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/vps-infra}"
 RAW_BASE="${VPS_INFRA_RAW_BASE:-https://raw.githubusercontent.com/bongnv/vps-infra/main}"
 COMPOSE_FILE="${COMPOSE_FILE:-}"
@@ -29,7 +29,8 @@ COMPOSE_FILE="${COMPOSE_FILE:-}"
 install_packages() {
   echo "==> Installing base packages"
   ${SUDO} apt-get update
-  ${SUDO} apt-get install -y ca-certificates curl git gnupg
+  ${SUDO} apt-get install -y ca-certificates curl git gnupg openssh-server
+  ${SUDO} systemctl enable --now ssh
 }
 
 resolve_compose_file() {
@@ -99,6 +100,69 @@ EOF
   fi
 }
 
+install_tailscale() {
+  if command -v tailscale >/dev/null 2>&1; then
+    echo "==> Tailscale is already installed"
+  else
+    echo "==> Installing Tailscale from Tailscale's apt repository"
+    local codename
+    codename="${VERSION_CODENAME:-}"
+
+    if [[ -z "${codename}" ]]; then
+      echo "Could not detect Ubuntu codename from /etc/os-release."
+      exit 1
+    fi
+
+    ${SUDO} install -m 0755 -d /usr/share/keyrings
+    curl -fsSL "https://pkgs.tailscale.com/stable/ubuntu/${codename}.noarmor.gpg" | \
+      ${SUDO} tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null
+    curl -fsSL "https://pkgs.tailscale.com/stable/ubuntu/${codename}.tailscale-keyring.list" | \
+      ${SUDO} tee /etc/apt/sources.list.d/tailscale.list >/dev/null
+    ${SUDO} apt-get update
+    ${SUDO} apt-get install -y tailscale
+  fi
+
+  echo "==> Enabling Tailscale"
+  ${SUDO} systemctl enable --now tailscaled
+
+  local tailscale_hostname
+  tailscale_hostname="${TAILSCALE_HOSTNAME:-$(hostname -s 2>/dev/null || echo macbook-home)}"
+
+  local tailscale_ssh_arg
+  tailscale_ssh_arg=""
+  if [[ "${ENABLE_TAILSCALE_SSH:-false}" == "true" ]]; then
+    tailscale_ssh_arg="--ssh"
+  fi
+
+  if [[ -z "${TAILSCALE_AUTHKEY:-}" && -r /dev/tty ]]; then
+    echo "==> Paste Tailscale auth key, or press Enter for browser login:" >/dev/tty
+    IFS= read -r -s TAILSCALE_AUTHKEY </dev/tty || true
+    echo >/dev/tty
+  fi
+
+  if ${SUDO} tailscale status --json 2>/dev/null | grep -q '"BackendState":"Running"'; then
+    echo "==> Tailscale is already connected"
+    return
+  fi
+
+  echo "==> Connecting Tailscale"
+  if [[ -n "${TAILSCALE_AUTHKEY:-}" ]]; then
+    ${SUDO} tailscale up \
+      --hostname="${tailscale_hostname}" \
+      --auth-key="${TAILSCALE_AUTHKEY}" \
+      ${tailscale_ssh_arg} \
+      ${TAILSCALE_EXTRA_ARGS:-}
+  elif [[ -r /dev/tty ]]; then
+    ${SUDO} tailscale up \
+      --hostname="${tailscale_hostname}" \
+      ${tailscale_ssh_arg} \
+      ${TAILSCALE_EXTRA_ARGS:-}
+  else
+    echo "==> TAILSCALE_AUTHKEY not set and no TTY is available; skipping tailscale up"
+    echo "    Re-run on the server with: sudo tailscale up --hostname=${tailscale_hostname}"
+  fi
+}
+
 install_cloudflared() {
   if command -v cloudflared >/dev/null 2>&1; then
     echo "==> cloudflared is already installed"
@@ -139,12 +203,15 @@ deploy_portainer() {
 }
 
 print_summary() {
+  local tailscale_hostname
+  tailscale_hostname="${TAILSCALE_HOSTNAME:-$(hostname -s 2>/dev/null || echo macbook-home)}"
+
   echo
   echo "Bootstrap complete."
   echo
   echo "Next steps:"
   echo "1. Log out and back in before running docker without sudo."
-  echo "2. In Cloudflare Tunnel, route SSH to: ssh://localhost:22"
+  echo "2. Use Tailscale for SSH: ssh ${TARGET_USER}@${tailscale_hostname}"
   echo "3. In Cloudflare Tunnel, route Portainer to: https://localhost:9443"
   echo "4. If using Portainer via Cloudflare, enable 'No TLS Verify' for the origin."
   echo
@@ -155,6 +222,7 @@ print_summary() {
 install_packages
 resolve_compose_file
 install_docker
+install_tailscale
 install_cloudflared
 deploy_portainer
 print_summary

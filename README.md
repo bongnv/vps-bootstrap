@@ -5,6 +5,8 @@ This public repository is the source of truth for the Ubuntu Server running on t
 The bootstrap installs:
 
 - Docker Engine and the Docker Compose plugin
+- OpenSSH server for local fallback access
+- Tailscale from Tailscale's apt repository for SSH/admin access over the tailnet
 - `cloudflared` from Cloudflare's apt repository as a host-level service
 - Portainer CE via Docker Compose
 
@@ -16,12 +18,17 @@ On the Ubuntu server:
 curl -fsSL https://raw.githubusercontent.com/bongnv/vps-infra/main/scripts/bootstrap-ubuntu.sh | bash
 ```
 
-The script will ask for the Cloudflare Tunnel token. Paste it at the prompt, or press Enter to skip tunnel service setup and only install Docker, `cloudflared`, and Portainer.
+The script will ask for:
 
-You can also pass the token inline, but this may save the token in shell history:
+- A Tailscale auth key. Paste one to join the server unattended, or press Enter to use the browser login URL shown by `tailscale up`.
+- A Cloudflare Tunnel token. Paste one to connect the tunnel for Portainer and web apps, or press Enter to skip tunnel service setup.
+
+You can also pass tokens inline, but this may save them in shell history:
 
 ```bash
-CLOUDFLARED_TOKEN='<paste-token-here>' bash -c "$(curl -fsSL https://raw.githubusercontent.com/bongnv/vps-infra/main/scripts/bootstrap-ubuntu.sh)"
+TAILSCALE_AUTHKEY='<paste-tailscale-auth-key>' \
+CLOUDFLARED_TOKEN='<paste-cloudflare-token>' \
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/bongnv/vps-infra/main/scripts/bootstrap-ubuntu.sh)"
 ```
 
 The remote installer downloads `docker-compose.yml` to:
@@ -36,13 +43,31 @@ If you have a local checkout, you can still run:
 ./scripts/bootstrap-ubuntu.sh
 ```
 
+## SSH
+
+SSH/admin access should go through Tailscale, not Cloudflare.
+
+By default this uses normal Ubuntu OpenSSH over the Tailscale private network. From another device in your tailnet:
+
+```bash
+ssh <ubuntu-user>@<tailscale-hostname>
+```
+
+If you specifically want the Tailscale SSH feature, enable it explicitly and make sure your Tailscale ACLs allow it:
+
+```bash
+ENABLE_TAILSCALE_SSH=true ./scripts/bootstrap-ubuntu.sh
+```
+
 ## Cloudflare Routes
+
+Use Cloudflare Tunnel only for Portainer and deployed web apps.
 
 Recommended public hostnames for the tunnel:
 
 ```text
-ssh.yourdomain.com        -> ssh://localhost:22
 portainer.yourdomain.com  -> https://localhost:9443
+photos.yourdomain.com     -> http://localhost:2283
 ```
 
 For Portainer, enable Cloudflare's origin setting equivalent to **No TLS Verify**, because Portainer uses a self-signed local certificate.
