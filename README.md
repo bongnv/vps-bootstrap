@@ -7,8 +7,8 @@ The bootstrap installs:
 - Docker Engine and the Docker Compose plugin
 - OpenSSH server for local fallback access
 - Tailscale from Tailscale's apt repository for SSH/admin access over the tailnet
-- `cloudflared` from Cloudflare's apt repository as a host-level service
 - Portainer CE via Docker Compose
+- `cloudflared` via Docker Compose for Portainer and web app ingress
 
 ## Bootstrap
 
@@ -21,7 +21,7 @@ curl -fsSL https://raw.githubusercontent.com/bongnv/vps-infra/main/scripts/boots
 The script will ask for:
 
 - A Tailscale auth key. Paste one to join the server unattended, or press Enter to use the browser login URL shown by `tailscale up`.
-- A Cloudflare Tunnel token. Paste one to connect the tunnel for Portainer and web apps, or press Enter to skip tunnel service setup.
+- A Cloudflare Tunnel token. Paste one to start the `cloudflared` container for Portainer and web apps, or press Enter to skip Cloudflare ingress.
 
 You can also pass tokens inline, but this may save them in shell history:
 
@@ -35,6 +35,12 @@ The remote installer downloads `docker-compose.yml` to:
 
 ```text
 /opt/vps-infra/docker-compose.yml
+```
+
+If you provide a Cloudflare token, the installer writes it to:
+
+```text
+/opt/vps-infra/.env
 ```
 
 If you have a local checkout, you can still run:
@@ -61,12 +67,12 @@ ENABLE_TAILSCALE_SSH=true ./scripts/bootstrap-ubuntu.sh
 
 ## Cloudflare Routes
 
-Use Cloudflare Tunnel only for Portainer and deployed web apps.
+Use Cloudflare Tunnel only for Portainer and deployed web apps. Because `cloudflared` runs in Docker, route to Docker service names on the shared `tunnel` network, not `localhost`.
 
 Recommended public hostnames for the tunnel:
 
 ```text
-portainer.yourdomain.com  -> https://localhost:9443
+portainer.yourdomain.com  -> https://portainer:9443
 photos.yourdomain.com     -> http://localhost:2283
 ```
 
@@ -85,3 +91,7 @@ https://<server-ip>:9443
 ```
 
 If you cannot reach the server over LAN, use the Cloudflare Tunnel route instead.
+
+## App Stacks
+
+Future web app stacks should join the external Docker network named `tunnel` if Cloudflare needs to reach them.
