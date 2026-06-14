@@ -25,7 +25,6 @@ TARGET_USER="${SUDO_USER:-${USER:-root}}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/vps-infra}"
 RAW_BASE="${VPS_INFRA_RAW_BASE:-https://raw.githubusercontent.com/bongnv/vps-infra/main}"
 COMPOSE_FILE="${COMPOSE_FILE:-}"
-ENV_FILE="${ENV_FILE:-}"
 
 install_base_packages() {
   echo "==> Installing package prerequisites"
@@ -58,15 +57,6 @@ resolve_compose_file() {
   echo "==> Downloading compose file to ${COMPOSE_FILE}"
   ${SUDO} install -m 0755 -d "${INSTALL_DIR}"
   ${SUDO} curl -fsSL "${RAW_BASE}/docker-compose.yml" -o "${COMPOSE_FILE}"
-}
-
-resolve_env_file() {
-  if [[ -n "${ENV_FILE}" ]]; then
-    echo "==> Using env file: ${ENV_FILE}"
-    return
-  fi
-
-  ENV_FILE="$(dirname -- "${COMPOSE_FILE}")/.env"
 }
 
 install_docker() {
@@ -109,56 +99,9 @@ EOF
   fi
 }
 
-disable_host_cloudflared() {
-  if systemctl list-unit-files cloudflared.service >/dev/null 2>&1; then
-    echo "==> Disabling host-level cloudflared service; Docker Compose will run cloudflared"
-    ${SUDO} systemctl disable --now cloudflared >/dev/null 2>&1 || true
-  fi
-}
-
-configure_cloudflared_env() {
-  if [[ -z "${CLOUDFLARED_TOKEN:-}" ]] &&
-    [[ -f "${ENV_FILE}" ]] &&
-    ${SUDO} grep -q '^CLOUDFLARED_TOKEN=.' "${ENV_FILE}"; then
-    echo "==> Using existing Cloudflare token from ${ENV_FILE}"
-    return
-  fi
-
-  if [[ -z "${CLOUDFLARED_TOKEN:-}" && -r /dev/tty ]]; then
-    echo "==> Paste Cloudflare Tunnel token, or press Enter to skip:" >/dev/tty
-    IFS= read -r -s CLOUDFLARED_TOKEN </dev/tty || true
-    echo >/dev/tty
-  fi
-
-  if [[ -n "${CLOUDFLARED_TOKEN:-}" ]]; then
-    echo "==> Writing Cloudflare token to ${ENV_FILE}"
-    ${SUDO} install -m 0755 -d "$(dirname -- "${ENV_FILE}")"
-    printf 'CLOUDFLARED_TOKEN=%s\n' "${CLOUDFLARED_TOKEN}" | \
-      ${SUDO} tee "${ENV_FILE}" >/dev/null
-    ${SUDO} chmod 0600 "${ENV_FILE}"
-  else
-    echo "==> CLOUDFLARED_TOKEN not set; cloudflared container will not start"
-    echo "    Re-run with: curl -fsSL ${RAW_BASE}/scripts/setup-apps.sh | bash"
-  fi
-}
-
-has_cloudflared_token() {
-  if [[ -n "${CLOUDFLARED_TOKEN:-}" ]]; then
-    return 0
-  fi
-
-  [[ -f "${ENV_FILE}" ]] && ${SUDO} grep -q '^CLOUDFLARED_TOKEN=.' "${ENV_FILE}"
-}
-
 deploy_stack() {
   echo "==> Deploying Portainer"
-  if has_cloudflared_token; then
-    echo "==> Deploying cloudflared container"
-    ${SUDO} docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" --profile cloudflare up -d
-  else
-    echo "==> Deploying without cloudflared; no Cloudflare token is configured"
-    ${SUDO} docker compose -f "${COMPOSE_FILE}" up -d portainer
-  fi
+  ${SUDO} docker compose -f "${COMPOSE_FILE}" up -d --remove-orphans portainer
 }
 
 print_summary() {
@@ -167,18 +110,15 @@ print_summary() {
   echo
   echo "Next steps:"
   echo "1. Log out and back in before running docker without sudo."
-  echo "2. In Cloudflare Tunnel, route Portainer to: https://portainer:9443"
-  echo "3. If using Portainer via Cloudflare, enable 'No TLS Verify' for the origin."
+  echo "2. Reach Portainer over Tailscale or your trusted LAN."
+  echo "3. Keep Cloudflare Tunnel and app stacks in the separate vps-stacks repo."
   echo
-  echo "Local Portainer URL, if you later have LAN access:"
-  echo "https://<server-ip>:9443"
+  echo "Portainer URL:"
+  echo "https://<tailscale-ip-or-hostname>:9443"
 }
 
 install_base_packages
 resolve_compose_file
-resolve_env_file
 install_docker
-disable_host_cloudflared
-configure_cloudflared_env
 deploy_stack
 print_summary

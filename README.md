@@ -5,7 +5,7 @@ This public repository is the source of truth for the Ubuntu Server running on t
 The setup is split into two stages:
 
 - Stage 1: install OpenSSH and Tailscale from the MacBook console
-- Stage 2: SSH in over Tailscale, then install Docker, Portainer, and the Dockerized Cloudflare Tunnel
+- Stage 2: SSH in over Tailscale, then install Docker and Portainer
 
 ## Stage 1: Tailscale
 
@@ -49,27 +49,11 @@ The script installs:
 
 - Docker Engine and the Docker Compose plugin
 - Portainer CE via Docker Compose
-- `cloudflared` via Docker Compose for Portainer and web app ingress
-
-It will ask for a Cloudflare Tunnel token. Paste one to start the `cloudflared` container, or press Enter to skip Cloudflare ingress for now.
-
-You can also pass the token inline, but this may save it in shell history:
-
-```bash
-CLOUDFLARED_TOKEN='<paste-cloudflare-token>' \
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/bongnv/vps-infra/main/scripts/setup-apps.sh)"
-```
 
 The remote installer downloads `docker-compose.yml` to:
 
 ```text
 /opt/vps-infra/docker-compose.yml
-```
-
-If you provide a Cloudflare token, the installer writes it to:
-
-```text
-/opt/vps-infra/.env
 ```
 
 ## Compatibility Bootstrap
@@ -82,20 +66,15 @@ curl -fsSL https://raw.githubusercontent.com/bongnv/vps-infra/main/scripts/boots
 
 Prefer the two-stage flow above so the heavier app setup happens from SSH.
 
-## Cloudflare Routes
+## Cloudflare and App Stacks
 
-Use Cloudflare Tunnel only for Portainer and deployed web apps. Because `cloudflared` runs in Docker, route to Docker service names on the shared `tunnel` network, not `localhost`.
+Cloudflare Tunnel, Immich, and other application stacks are managed from the separate `vps-stacks` repository.
 
-Recommended public hostnames for the tunnel:
+Keep Portainer private and access it over Tailscale from trusted clients or GitHub Actions:
 
 ```text
-portainer.yourdomain.com  -> https://portainer:9443
-photos.yourdomain.com     -> http://<immich-service-name>:2283
+https://<tailscale-ip-or-hostname>:9443
 ```
-
-For Portainer, enable Cloudflare's origin setting equivalent to **No TLS Verify**, because Portainer uses a self-signed local certificate.
-
-Keep Portainer behind Cloudflare Access with MFA.
 
 ## Portainer
 
@@ -107,8 +86,8 @@ After bootstrap, the local URL is:
 https://<server-ip>:9443
 ```
 
-If you cannot reach the server over LAN, use the Cloudflare Tunnel route instead.
+If you cannot reach the server over LAN, use the Tailscale address instead.
 
 ## App Stacks
 
-Future web app stacks should join the external Docker network named `tunnel` if Cloudflare needs to reach them.
+Future web app stacks should live in the separate `vps-stacks` repository.
