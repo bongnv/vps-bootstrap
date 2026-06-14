@@ -5,7 +5,7 @@ This public repository is the source of truth for the Ubuntu Server running on t
 The bootstrap installs:
 
 - Docker Engine and the Docker Compose plugin
-- `cloudflared` as a host-level service
+- `cloudflared` from Cloudflare's apt repository as a host-level service
 - Portainer CE via Docker Compose
 
 ## Bootstrap

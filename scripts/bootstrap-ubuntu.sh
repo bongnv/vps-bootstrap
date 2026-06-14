@@ -103,23 +103,14 @@ install_cloudflared() {
   if command -v cloudflared >/dev/null 2>&1; then
     echo "==> cloudflared is already installed"
   else
-    echo "==> Installing cloudflared"
-    local arch package_arch deb_path
-    arch="$(dpkg --print-architecture)"
-
-    case "${arch}" in
-      amd64) package_arch="amd64" ;;
-      arm64) package_arch="arm64" ;;
-      *)
-        echo "Unsupported architecture for this installer: ${arch}"
-        exit 1
-        ;;
-    esac
-
-    deb_path="/tmp/cloudflared-linux-${package_arch}.deb"
-    curl -L --fail --output "${deb_path}" \
-      "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${package_arch}.deb"
-    ${SUDO} apt-get install -y "${deb_path}"
+    echo "==> Installing cloudflared from Cloudflare's apt repository"
+    ${SUDO} install -m 0755 -d /usr/share/keyrings
+    curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | \
+      ${SUDO} tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+    echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main" | \
+      ${SUDO} tee /etc/apt/sources.list.d/cloudflared.list >/dev/null
+    ${SUDO} apt-get update
+    ${SUDO} apt-get install -y cloudflared
   fi
 
   if [[ -z "${CLOUDFLARED_TOKEN:-}" && -r /dev/tty ]]; then
