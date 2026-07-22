@@ -28,9 +28,9 @@ fi
 
 TARGET_USER="${SUDO_USER:-${USER:-root}}"
 
-# Host firewall baseline. SSH is the only publicly allowed inbound port;
-# everything else (Portainer, agent, app stacks) is reached over the Tailscale
-# interface. Set ENABLE_UFW=false to skip firewall configuration.
+# Host firewall baseline. Everything is reached over the Tailscale interface.
+# SSH_PORT opens a public SSH rule in UFW (default 22). Set SSH_PORT='' to skip
+# the SSH rule entirely, e.g. when using Tailscale or OCI Console for access.
 ENABLE_UFW="${ENABLE_UFW:-true}"
 SSH_PORT="${SSH_PORT:-22}"
 
@@ -92,8 +92,12 @@ configure_ufw() {
   ${SUDO} ufw default deny incoming
   ${SUDO} ufw default allow outgoing
 
-  echo "==> Allowing SSH on port ${SSH_PORT}"
-  ${SUDO} ufw allow "${SSH_PORT}/tcp"
+  if [[ -n "${SSH_PORT}" ]]; then
+    echo "==> Allowing SSH on port ${SSH_PORT}"
+    ${SUDO} ufw allow "${SSH_PORT}/tcp"
+  else
+    echo "==> SSH_PORT is empty; skipping public SSH rule (access via Tailscale or OCI Console)"
+  fi
 
   # Allow all traffic on the Tailscale interface so Portainer, the agent, and
   # app stacks stay reachable privately without being exposed to the internet.

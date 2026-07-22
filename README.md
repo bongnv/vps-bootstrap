@@ -29,9 +29,11 @@ TAILSCALE_AUTHKEY='tskey-auth-xxxxx' \
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/bongnv/vps-infra/main/scripts/bootstrap.sh)"
 ```
 
-For OCI, open only the **SSH** ingress rule in the Security List; everything else
-runs over Tailscale. The script auto-detects OCI. If needed, force or skip OCI
-handling with `ORACLE_CLOUD=true` or `ORACLE_CLOUD=false`.
+The script auto-detects OCI and applies OCI-specific handling. If needed, force
+or skip it with `ORACLE_CLOUD=true` or `ORACLE_CLOUD=false`.
+
+No public SSH port is needed. Set `SSH_PORT=''` to skip the SSH firewall rule
+and rely on Tailscale or the OCI Console Connection for access instead.
 
 When it finishes, register the node in the Portainer host.
 
@@ -53,5 +55,5 @@ Prepend these environment variables when needed:
 - `PORTAINER_ROLE=host|agent` — required; selects which role to bootstrap
 - `TAILSCALE_AUTHKEY` — required; joins the tailnet without a prompt
 - `TAILSCALE_HOSTNAME` — optional friendly name shown in Tailscale
-- `SSH_PORT` — SSH port to allow in the firewall (default `22`)
+- `SSH_PORT` — SSH port to allow in the firewall (default `22`); set to `''` to skip public SSH entirely
 - `ORACLE_CLOUD=true|false` — force or skip OCI-specific handling for agents
