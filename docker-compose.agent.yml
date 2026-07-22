@@ -1,0 +1,17 @@
+# Portainer Agent for a node managed by a central Portainer server (e.g. the
+# home server managing an OCI box over Tailscale). Port 9001 is only reachable
+# over the tailscale0 interface thanks to the UFW baseline, so it is never
+# exposed publicly. The Agent handles its own TLS with the Portainer server, so
+# it does not need (and must not be fronted by) Tailscale Serve.
+services:
+  agent:
+    image: portainer/agent:lts
+    container_name: portainer_agent
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "9001:9001"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker/volumes:/var/lib/docker/volumes

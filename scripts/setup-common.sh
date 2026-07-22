@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Shared host setup for both Portainer roles: installs Docker Engine and the
+# Compose plugin, and applies the UFW firewall baseline. Safe to run on its own,
+# and re-running it is idempotent. The Portainer host/agent scripts call this
+# automatically if Docker is not yet installed.
+
 if [[ "$(uname -s)" != "Linux" ]]; then
   echo "This script must be run on the Ubuntu server."
   exit 1
@@ -22,12 +27,9 @@ if [[ "${EUID}" -ne 0 ]]; then
 fi
 
 TARGET_USER="${SUDO_USER:-${USER:-root}}"
-INSTALL_DIR="${INSTALL_DIR:-/opt/vps-infra}"
-RAW_BASE="${VPS_INFRA_RAW_BASE:-https://raw.githubusercontent.com/bongnv/vps-infra/main}"
-COMPOSE_FILE="${COMPOSE_FILE:-}"
 
 # Host firewall baseline. SSH is the only publicly allowed inbound port;
-# everything else (Portainer, app stacks) is reached over the Tailscale
+# everything else (Portainer, agent, app stacks) is reached over the Tailscale
 # interface. Set ENABLE_UFW=false to skip firewall configuration.
 ENABLE_UFW="${ENABLE_UFW:-true}"
 SSH_PORT="${SSH_PORT:-22}"
@@ -36,33 +38,6 @@ install_base_packages() {
   echo "==> Installing package prerequisites"
   ${SUDO} apt-get update
   ${SUDO} apt-get install -y ca-certificates curl git gnupg
-}
-
-resolve_compose_file() {
-  if [[ -n "${COMPOSE_FILE}" ]]; then
-    echo "==> Using compose file: ${COMPOSE_FILE}"
-    return
-  fi
-
-  local script_source script_dir repo_dir local_compose
-  script_source="${BASH_SOURCE[0]:-}"
-
-  if [[ -n "${script_source}" && "${script_source}" != "bash" && -f "${script_source}" ]]; then
-    script_dir="$(cd -- "$(dirname -- "${script_source}")" && pwd)"
-    repo_dir="$(cd -- "${script_dir}/.." && pwd)"
-    local_compose="${repo_dir}/docker-compose.yml"
-
-    if [[ -f "${local_compose}" ]]; then
-      COMPOSE_FILE="${local_compose}"
-      echo "==> Using local compose file: ${COMPOSE_FILE}"
-      return
-    fi
-  fi
-
-  COMPOSE_FILE="${INSTALL_DIR}/docker-compose.yml"
-  echo "==> Downloading compose file to ${COMPOSE_FILE}"
-  ${SUDO} install -m 0755 -d "${INSTALL_DIR}"
-  ${SUDO} curl -fsSL "${RAW_BASE}/docker-compose.yml" -o "${COMPOSE_FILE}"
 }
 
 install_docker() {
@@ -120,8 +95,8 @@ configure_ufw() {
   echo "==> Allowing SSH on port ${SSH_PORT}"
   ${SUDO} ufw allow "${SSH_PORT}/tcp"
 
-  # Allow all traffic on the Tailscale interface so Portainer and app stacks
-  # stay reachable privately without being exposed to the public internet.
+  # Allow all traffic on the Tailscale interface so Portainer, the agent, and
+  # app stacks stay reachable privately without being exposed to the internet.
   if ip link show tailscale0 >/dev/null 2>&1; then
     echo "==> Allowing traffic on the tailscale0 interface"
     ${SUDO} ufw allow in on tailscale0
@@ -133,27 +108,9 @@ configure_ufw() {
   ${SUDO} ufw status verbose || true
 }
 
-deploy_stack() {
-  echo "==> Deploying Portainer"
-  ${SUDO} docker compose -f "${COMPOSE_FILE}" up -d --remove-orphans portainer
-}
-
-print_summary() {
-  echo
-  echo "Apps setup complete."
-  echo
-  echo "Next steps:"
-  echo "1. Log out and back in before running docker without sudo."
-  echo "2. Reach Portainer over Tailscale or your trusted LAN."
-  echo "3. Keep Cloudflare Tunnel and app stacks in the separate vps-stacks repo."
-  echo
-  echo "Portainer URL:"
-  echo "https://<tailscale-ip-or-hostname>:9443"
-}
-
-install_base_packages
-resolve_compose_file
-install_docker
-configure_ufw
-deploy_stack
-print_summary
+# Allow this file to be sourced (functions only) without running the steps.
+if [[ "${SETUP_COMMON_SOURCE_ONLY:-false}" != "true" ]]; then
+  install_base_packages
+  install_docker
+  configure_ufw
+fi

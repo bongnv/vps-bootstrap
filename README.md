@@ -1,110 +1,57 @@
 # Home Server Infra
 
-This public repository is the source of truth for the Ubuntu Server running on the MacBook Pro.
+Bootstrap scripts for Ubuntu servers in the fleet.
 
-The setup is split into two stages:
+- **Host**: runs Portainer and manages the fleet.
+- **Agent**: runs the Portainer Agent and is managed from the host over Tailscale.
 
-- Stage 1: install OpenSSH and Tailscale from the MacBook console
-- Stage 2: SSH in over Tailscale, then install Docker and Portainer
+App stacks (Cloudflare Tunnel, Immich, etc.) live in the separate `vps-stacks` repository.
 
-## Oracle Cloud (OCI)
+## Bootstrap the host
 
-Oracle Cloud Ubuntu images ship with restrictive `iptables` rules that drop inbound traffic even when the VCN Security List allows it. The Oracle bootstrap clears those instance-level blocks, then runs the Tailscale and apps stages (which apply the shared UFW baseline).
-
-Generate a key at **Tailscale admin → Settings → Keys → Generate auth key**, then run this on the OCI instance:
+Generate a Tailscale auth key, then run this on the home server:
 
 ```bash
+PORTAINER_ROLE=host \
 TAILSCALE_AUTHKEY='tskey-auth-xxxxx' \
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/bongnv/vps-infra/main/scripts/bootstrap-oracle.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/bongnv/vps-infra/main/scripts/bootstrap.sh)"
 ```
 
-Use `bash -c "$(...)"` (not `curl ... | bash`) so the terminal stays attached; the auth key joins the tailnet unattended.
+When it finishes, open Portainer at the URL printed by the script.
 
-- **Open only the SSH ingress rule** in the OCI Security List. Portainer and apps go over Tailscale; public apps use an outbound-only Cloudflare Tunnel.
-- Portainer is fronted with Tailscale Serve at `https://<host>.<tailnet>.ts.net:9443` (trusted TLS). Set the `vps-stacks` `PORTAINER_URL` to this so GitHub Actions can deploy. Requires HTTPS enabled once per tailnet (admin console → MagicDNS).
+## Bootstrap an agent
 
-## Stage 1: Tailscale
-
-Run this on the Ubuntu server console:
+Generate a Tailscale auth key, then run this on any managed node, including Oracle Cloud instances:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/bongnv/vps-infra/main/scripts/install-tailscale.sh | bash
+PORTAINER_ROLE=agent \
+TAILSCALE_AUTHKEY='tskey-auth-xxxxx' \
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/bongnv/vps-infra/main/scripts/bootstrap.sh)"
 ```
 
-The script will ask for a Tailscale auth key. Paste one to join the server unattended, or press Enter to use the browser login URL shown by `tailscale up`.
+For OCI, open only the **SSH** ingress rule in the Security List; everything else
+runs over Tailscale. The script auto-detects OCI. If needed, force or skip OCI
+handling with `ORACLE_CLOUD=true` or `ORACLE_CLOUD=false`.
 
-You can also pass the auth key inline, but this may save it in shell history:
+When it finishes, register the node in the Portainer host.
 
-```bash
-TAILSCALE_AUTHKEY='<paste-tailscale-auth-key>' \
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/bongnv/vps-infra/main/scripts/install-tailscale.sh)"
-```
+## Register an agent
 
-After it joins your tailnet, SSH from another device signed in to Tailscale:
-
-```bash
-ssh <ubuntu-user>@<tailscale-ip-or-hostname>
-```
-
-By default this uses normal Ubuntu OpenSSH over the Tailscale private network. If you specifically want the Tailscale SSH feature, enable it explicitly and make sure your Tailscale ACLs allow it:
-
-```bash
-ENABLE_TAILSCALE_SSH=true \
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/bongnv/vps-infra/main/scripts/install-tailscale.sh)"
-```
-
-## Stage 2: Apps
-
-Run this from the SSH session:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/bongnv/vps-infra/main/scripts/setup-apps.sh | bash
-```
-
-The script installs:
-
-- Docker Engine and the Docker Compose plugin
-- Portainer CE via Docker Compose
-- A UFW baseline (deny incoming, allow SSH and the `tailscale0` interface); set `ENABLE_UFW=false` to skip
-
-The remote installer downloads `docker-compose.yml` to:
+In the Portainer host, go to **Environments → Add → Agent** and enter the
+address printed by the bootstrap:
 
 ```text
-/opt/vps-infra/docker-compose.yml
+<agent-host>.<tailnet>.ts.net:9001
 ```
 
-## Compatibility Bootstrap
+This requires MagicDNS on the tailnet.
 
-The old all-in-one bootstrap still exists as a wrapper:
+## Options
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/bongnv/vps-infra/main/scripts/bootstrap-ubuntu.sh | bash
-```
+Prepend these environment variables when needed:
 
-Prefer the two-stage flow above so the heavier app setup happens from SSH.
-
-## Cloudflare and App Stacks
-
-Cloudflare Tunnel, Immich, and other application stacks are managed from the separate `vps-stacks` repository.
-
-Keep Portainer private and access it over Tailscale from trusted clients or GitHub Actions:
-
-```text
-https://<tailscale-ip-or-hostname>:9443
-```
-
-## Portainer
-
-Portainer CE is defined in `docker-compose.yml`.
-
-After bootstrap, the local URL is:
-
-```text
-https://<server-ip>:9443
-```
-
-If you cannot reach the server over LAN, use the Tailscale address instead.
-
-## App Stacks
-
-Future web app stacks should live in the separate `vps-stacks` repository.
+- `PORTAINER_ROLE=host|agent` — required; selects which role to bootstrap
+- `TAILSCALE_AUTHKEY` — required; joins the tailnet without a prompt
+- `TAILSCALE_HOSTNAME` — optional friendly name shown in Tailscale
+- `SSH_PORT` — SSH port to allow in the firewall (default `22`)
+- `ORACLE_CLOUD=true|false` — force or skip OCI-specific handling for agents
