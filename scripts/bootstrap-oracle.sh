@@ -31,11 +31,6 @@ fi
 
 RAW_BASE="${VPS_INFRA_RAW_BASE:-https://raw.githubusercontent.com/bongnv/vps-infra/main}"
 
-# SSH is the only inbound port opened publicly. Everything else (Portainer,
-# app stacks) is reached over the Tailscale interface, and public apps use an
-# outbound-only Cloudflare Tunnel, so no other inbound ports are ever exposed.
-SSH_PORT="${SSH_PORT:-22}"
-
 run_local_or_remote() {
   local script_name script_source script_dir
   script_name="${1}"
@@ -63,7 +58,7 @@ clear_oracle_iptables() {
 
   # Oracle ships restrictive rules that REJECT most inbound traffic. Flush the
   # filter table and set permissive defaults; the OCI Security List (VCN level)
-  # plus UFW below provide the real access control.
+  # plus the UFW baseline from setup-apps.sh provide the real access control.
   ${SUDO} iptables -P INPUT ACCEPT
   ${SUDO} iptables -P FORWARD ACCEPT
   ${SUDO} iptables -P OUTPUT ACCEPT
@@ -86,34 +81,13 @@ clear_oracle_iptables() {
   fi
 }
 
-configure_ufw() {
-  echo "==> Configuring UFW host firewall"
-  ${SUDO} apt-get install -y ufw
-
-  ${SUDO} ufw --force reset
-  ${SUDO} ufw default deny incoming
-  ${SUDO} ufw default allow outgoing
-
-  echo "==> Allowing SSH on port ${SSH_PORT}"
-  ${SUDO} ufw allow "${SSH_PORT}/tcp"
-
-  # Allow all traffic on the Tailscale interface so app ports stay reachable
-  # privately without being exposed to the public internet.
-  echo "==> Allowing traffic on the tailscale0 interface"
-  ${SUDO} ufw allow in on tailscale0
-
-  ${SUDO} ufw --force enable
-  ${SUDO} ufw status verbose || true
-}
-
 print_summary() {
   echo
   echo "Oracle Cloud bootstrap complete."
   echo
   echo "What this did:"
   echo "1. Cleared Oracle's restrictive instance-level iptables rules."
-  echo "2. Applied a UFW host firewall (SSH open, apps via Tailscale)."
-  echo "3. Ran the Tailscale and apps stages (Docker, Portainer, HTTPS Serve)."
+  echo "2. Ran the Tailscale and apps stages (Tailscale, UFW, Docker, Portainer)."
   echo
   echo "Reminder: open only the SSH ingress rule in the OCI Security List."
   echo "No other inbound ports are needed (apps use Tailscale / Cloudflare Tunnel)."
@@ -126,9 +100,8 @@ echo
 echo "==> Running Tailscale setup stage"
 run_local_or_remote "install-tailscale.sh"
 
-# UFW references tailscale0, which only exists after Tailscale is up.
-configure_ufw
-
+# setup-apps.sh configures the UFW baseline (allowing tailscale0), which is why
+# the Tailscale stage must run first so the interface already exists.
 echo
 echo "==> Running apps setup stage"
 run_local_or_remote "setup-apps.sh"

@@ -9,7 +9,7 @@ The setup is split into two stages:
 
 ## Oracle Cloud (OCI)
 
-Oracle Cloud Ubuntu images ship with restrictive `iptables` rules that drop inbound traffic even when the VCN Security List allows it. The Oracle bootstrap clears those instance-level blocks, applies a Tailscale-friendly UFW firewall, and runs the Tailscale and apps stages.
+Oracle Cloud Ubuntu images ship with restrictive `iptables` rules that drop inbound traffic even when the VCN Security List allows it. The Oracle bootstrap clears those instance-level blocks, then runs the Tailscale and apps stages (which apply the shared UFW baseline).
 
 Generate a key at **Tailscale admin → Settings → Keys → Generate auth key**, then run this on the OCI instance:
 
@@ -65,6 +65,7 @@ The script installs:
 
 - Docker Engine and the Docker Compose plugin
 - Portainer CE via Docker Compose
+- A UFW baseline (deny incoming, allow SSH and the `tailscale0` interface); set `ENABLE_UFW=false` to skip
 
 The remote installer downloads `docker-compose.yml` to:
 

@@ -26,6 +26,12 @@ INSTALL_DIR="${INSTALL_DIR:-/opt/vps-infra}"
 RAW_BASE="${VPS_INFRA_RAW_BASE:-https://raw.githubusercontent.com/bongnv/vps-infra/main}"
 COMPOSE_FILE="${COMPOSE_FILE:-}"
 
+# Host firewall baseline. SSH is the only publicly allowed inbound port;
+# everything else (Portainer, app stacks) is reached over the Tailscale
+# interface. Set ENABLE_UFW=false to skip firewall configuration.
+ENABLE_UFW="${ENABLE_UFW:-true}"
+SSH_PORT="${SSH_PORT:-22}"
+
 install_base_packages() {
   echo "==> Installing package prerequisites"
   ${SUDO} apt-get update
@@ -99,6 +105,34 @@ EOF
   fi
 }
 
+configure_ufw() {
+  if [[ "${ENABLE_UFW}" != "true" ]]; then
+    return
+  fi
+
+  echo "==> Configuring UFW host firewall"
+  ${SUDO} apt-get install -y ufw
+
+  ${SUDO} ufw --force reset
+  ${SUDO} ufw default deny incoming
+  ${SUDO} ufw default allow outgoing
+
+  echo "==> Allowing SSH on port ${SSH_PORT}"
+  ${SUDO} ufw allow "${SSH_PORT}/tcp"
+
+  # Allow all traffic on the Tailscale interface so Portainer and app stacks
+  # stay reachable privately without being exposed to the public internet.
+  if ip link show tailscale0 >/dev/null 2>&1; then
+    echo "==> Allowing traffic on the tailscale0 interface"
+    ${SUDO} ufw allow in on tailscale0
+  else
+    echo "==> tailscale0 interface not found; run install-tailscale.sh first for private access"
+  fi
+
+  ${SUDO} ufw --force enable
+  ${SUDO} ufw status verbose || true
+}
+
 deploy_stack() {
   echo "==> Deploying Portainer"
   ${SUDO} docker compose -f "${COMPOSE_FILE}" up -d --remove-orphans portainer
@@ -120,5 +154,6 @@ print_summary() {
 install_base_packages
 resolve_compose_file
 install_docker
+configure_ufw
 deploy_stack
 print_summary
