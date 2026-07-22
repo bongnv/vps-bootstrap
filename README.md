@@ -7,6 +7,22 @@ The setup is split into two stages:
 - Stage 1: install OpenSSH and Tailscale from the MacBook console
 - Stage 2: SSH in over Tailscale, then install Docker and Portainer
 
+## Oracle Cloud (OCI)
+
+Oracle Cloud Ubuntu images ship with restrictive `iptables` rules that drop inbound traffic even when the VCN Security List allows it. The Oracle bootstrap clears those instance-level blocks, applies a Tailscale-friendly UFW firewall, and runs the Tailscale and apps stages.
+
+Generate a key at **Tailscale admin → Settings → Keys → Generate auth key**, then run this on the OCI instance:
+
+```bash
+TAILSCALE_AUTHKEY='tskey-auth-xxxxx' \
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/bongnv/vps-infra/main/scripts/bootstrap-oracle.sh)"
+```
+
+Use `bash -c "$(...)"` (not `curl ... | bash`) so the terminal stays attached; the auth key joins the tailnet unattended.
+
+- **Open only the SSH ingress rule** in the OCI Security List. Portainer and apps go over Tailscale; public apps use an outbound-only Cloudflare Tunnel.
+- Portainer is fronted with Tailscale Serve at `https://<host>.<tailnet>.ts.net:9443` (trusted TLS). Set the `vps-stacks` `PORTAINER_URL` to this so GitHub Actions can deploy. Requires HTTPS enabled once per tailnet (admin console → MagicDNS).
+
 ## Stage 1: Tailscale
 
 Run this on the Ubuntu server console:

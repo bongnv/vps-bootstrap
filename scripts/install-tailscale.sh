@@ -95,6 +95,29 @@ connect_tailscale() {
   fi
 }
 
+serve_portainer() {
+  # Front Portainer's HTTPS UI/API with Tailscale Serve so it is reachable at
+  # https://<host>.<tailnet>.ts.net:9443 with a trusted certificate. This is set
+  # up here (before Portainer is installed in setup-apps.sh) because the
+  # vps-stacks GitHub Actions pipeline needs a valid-TLS Portainer endpoint to
+  # reach before it can deploy any stack. Serve just proxies, so configuring the
+  # route ahead of the backend is fine; it starts working once Portainer is up.
+  #
+  # Requires HTTPS enabled once per tailnet in the admin console (MagicDNS).
+  if [[ "${ENABLE_PORTAINER_SERVE:-true}" != "true" ]]; then
+    return
+  fi
+
+  if ! ${SUDO} tailscale status --json 2>/dev/null | grep -q '"BackendState":"Running"'; then
+    echo "==> Tailscale is not connected; skipping Portainer serve setup"
+    echo "    Once connected, run: sudo tailscale serve --bg --https=9443 https+insecure://127.0.0.1:9443"
+    return
+  fi
+
+  echo "==> Exposing Portainer over Tailscale Serve (https :9443)"
+  ${SUDO} tailscale serve --bg --https=9443 "https+insecure://127.0.0.1:9443"
+}
+
 print_summary() {
   local tailscale_hostname tailscale_ip
   tailscale_hostname="${TAILSCALE_HOSTNAME:-$(hostname -s 2>/dev/null || echo macbook-home)}"
@@ -116,4 +139,5 @@ print_summary() {
 install_base_packages
 install_tailscale
 connect_tailscale
+serve_portainer
 print_summary
