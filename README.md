@@ -56,4 +56,5 @@ Prepend these environment variables when needed:
 - `TAILSCALE_AUTHKEY` — required; joins the tailnet without a prompt
 - `TAILSCALE_HOSTNAME` — optional friendly name shown in Tailscale
 - `SSH_PORT` — SSH port to allow in the firewall (default `22`); set to `''` to skip public SSH entirely
+- `ENABLE_TAILSCALE_SSH=true|false` — enable Tailscale SSH (default `true`); lets you SSH over the tailnet without keys or open firewall ports
 - `ORACLE_CLOUD=true|false` — force or skip OCI-specific handling for agents

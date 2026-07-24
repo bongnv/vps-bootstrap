@@ -62,7 +62,7 @@ connect_tailscale() {
   tailscale_hostname="${TAILSCALE_HOSTNAME:-$(hostname -s 2>/dev/null || echo macbook-home)}"
   tailscale_ssh_arg=""
 
-  if [[ "${ENABLE_TAILSCALE_SSH:-false}" == "true" ]]; then
+  if [[ "${ENABLE_TAILSCALE_SSH:-true}" == "true" ]]; then
     tailscale_ssh_arg="--ssh"
   fi
 
