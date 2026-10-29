@@ -6,7 +6,8 @@ services:
     security_opt:
       - no-new-privileges:true
     ports:
-      - "9443:9443"
+      # Tailscale Serve owns tailnet :9443 and proxies to this loopback binding.
+      - "127.0.0.1:9443:9443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data
