@@ -77,6 +77,13 @@ enable their services at boot, and join the tailnet. When prompted, paste an
 auth key or press Enter and open the displayed login URL in a browser.
 Keep your existing SSH session open until you have verified client connectivity.
 
+Package installation is noninteractive. Existing SSH and other package
+configuration files are kept, and needrestart reports pending service restarts
+without prompting or performing them. Package maintainer scripts may still
+restart their own services. Review the output and schedule any required restarts
+or reboot afterward. For a fully unattended run, use root or configure sudo
+access without a password, and provide a Tailscale auth key.
+
 For an unattended run, provide `TAILSCALE_AUTHKEY`. To avoid putting it in shell
 history, read it into the environment first:
 
@@ -97,10 +104,12 @@ curl -fsSL https://raw.githubusercontent.com/bongnv/vps-bootstrap/main/scripts/s
 bash "${workdir}/setup-tailscale-exit-node.sh"
 ```
 
-When there is no adjacent `install-tailscale.sh`, the wrapper downloads it from
-the same repository. Set `VPS_INFRA_RAW_BASE` to a trusted raw repository URL to
-fetch the installer from a different revision. Use matching wrapper and installer
-revisions. A local adjacent installer takes precedence.
+The wrapper requires `sysctl`, provided by Ubuntu's standard `procps` package.
+When there is no adjacent `install-tailscale.sh`, it also requires an existing
+`curl` command to download the installer from the same repository. The wrapper
+does not install packages itself. Set `VPS_INFRA_RAW_BASE` to a trusted raw
+repository URL to fetch the installer from a different revision. Use matching
+wrapper and installer revisions. A local adjacent installer takes precedence.
 
 Exit node options:
 
@@ -158,9 +167,13 @@ host networking configuration, remove the managed sysctl file and restore the
 previous forwarding and router advertisement values. Do not disable forwarding
 if another service needs it.
 
-## Script tests
+## Script validation
 
-Run `python3 -m unittest discover -s tests -v` and `bash -n scripts/*.sh`.
-The tests replace host operations with local test doubles. They do not install
-packages, modify the host, or prove actual VPN routing. Use the client checks above
-on Ubuntu for live validation.
+Check shell syntax with:
+
+```bash
+for script in scripts/*.sh; do bash -n "$script" || exit; done
+```
+
+Syntax checks do not prove actual VPN routing. Use the client checks above on
+Ubuntu for live validation.

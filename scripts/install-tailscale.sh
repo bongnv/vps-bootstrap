@@ -29,7 +29,9 @@ prepare_host() {
 install_base_packages() {
   echo "==> Installing SSH and package prerequisites"
   ${SUDO} apt-get update
-  ${SUDO} apt-get install -y ca-certificates curl gnupg openssh-server
+  ${SUDO} env DEBIAN_FRONTEND=noninteractive UCF_FORCE_CONFFOLD=1 NEEDRESTART_MODE=l \
+    apt-get install -y -o Dpkg::Options::=--force-confdef \
+    -o Dpkg::Options::=--force-confold ca-certificates curl gnupg openssh-server
   ${SUDO} systemctl enable --now ssh
 }
 
@@ -52,7 +54,9 @@ install_tailscale() {
     curl -fsSL "https://pkgs.tailscale.com/stable/ubuntu/${codename}.tailscale-keyring.list" | \
       ${SUDO} tee /etc/apt/sources.list.d/tailscale.list >/dev/null
     ${SUDO} apt-get update
-    ${SUDO} apt-get install -y tailscale
+    ${SUDO} env DEBIAN_FRONTEND=noninteractive UCF_FORCE_CONFFOLD=1 NEEDRESTART_MODE=l \
+      apt-get install -y -o Dpkg::Options::=--force-confdef \
+      -o Dpkg::Options::=--force-confold tailscale
   fi
 
   echo "==> Enabling Tailscale"
