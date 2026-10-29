@@ -1,28 +1,30 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ "$(uname -s)" != "Linux" ]]; then
-  echo "This script must be run on the Ubuntu server."
-  exit 1
-fi
+prepare_host() {
+  if [[ "$(uname -s)" != "Linux" ]]; then
+    echo "This script must be run on the Ubuntu server."
+    exit 1
+  fi
 
-if [[ -r /etc/os-release ]]; then
-  # shellcheck disable=SC1091
-  . /etc/os-release
-fi
+  if [[ -r /etc/os-release ]]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+  fi
 
-if [[ "${ID:-}" != "ubuntu" ]]; then
-  echo "This script is intended for Ubuntu Server. Detected: ${PRETTY_NAME:-unknown}"
-  exit 1
-fi
+  if [[ "${ID:-}" != "ubuntu" ]]; then
+    echo "This script is intended for Ubuntu Server. Detected: ${PRETTY_NAME:-unknown}"
+    exit 1
+  fi
 
-SUDO=""
-if [[ "${EUID}" -ne 0 ]]; then
-  SUDO="sudo"
-fi
+  SUDO=""
+  if [[ "${EUID}" -ne 0 ]]; then
+    SUDO="sudo"
+  fi
 
-TARGET_USER="${SUDO_USER:-${USER:-root}}"
-RAW_BASE="${VPS_INFRA_RAW_BASE:-https://raw.githubusercontent.com/bongnv/vps-infra/main}"
+  TARGET_USER="${SUDO_USER:-${USER:-root}}"
+  RAW_BASE="${VPS_INFRA_RAW_BASE:-https://raw.githubusercontent.com/bongnv/vps-infra/main}"
+}
 
 install_base_packages() {
   echo "==> Installing SSH and package prerequisites"
@@ -57,8 +59,18 @@ install_tailscale() {
   ${SUDO} systemctl enable --now tailscaled
 }
 
-connect_tailscale() {
-  local tailscale_hostname tailscale_ssh_arg
+has_terminal() {
+  ( : </dev/tty ) 2>/dev/null
+}
+
+prompt_authkey() {
+  echo "==> Paste Tailscale auth key, or press Enter for browser login:" >/dev/tty
+  IFS= read -r -s TAILSCALE_AUTHKEY </dev/tty || true
+  echo >/dev/tty
+}
+
+connect_tailscale() (
+  local tailscale_hostname tailscale_ssh_arg status auth_key_file
   tailscale_hostname="${TAILSCALE_HOSTNAME:-$(hostname -s 2>/dev/null || echo macbook-home)}"
   tailscale_ssh_arg=""
 
@@ -66,25 +78,28 @@ connect_tailscale() {
     tailscale_ssh_arg="--ssh"
   fi
 
-  if ${SUDO} tailscale status --json 2>/dev/null | grep -q '"BackendState":"Running"'; then
+  status="$(${SUDO} tailscale status --json 2>/dev/null)" || true
+  if grep -qE '"BackendState"[[:space:]]*:[[:space:]]*"Running"' <<<"${status}"; then
     echo "==> Tailscale is already connected"
     return
   fi
 
-  if [[ -z "${TAILSCALE_AUTHKEY:-}" && -r /dev/tty ]]; then
-    echo "==> Paste Tailscale auth key, or press Enter for browser login:" >/dev/tty
-    IFS= read -r -s TAILSCALE_AUTHKEY </dev/tty || true
-    echo >/dev/tty
+  if [[ -z "${TAILSCALE_AUTHKEY:-}" ]] && has_terminal; then
+    prompt_authkey
   fi
 
   echo "==> Connecting Tailscale"
   if [[ -n "${TAILSCALE_AUTHKEY:-}" ]]; then
+    auth_key_file="$(umask 077; mktemp)"
+    trap 'rm -f -- "${auth_key_file}"' EXIT
+    printf '%s' "${TAILSCALE_AUTHKEY}" >"${auth_key_file}"
+    unset TAILSCALE_AUTHKEY
     ${SUDO} tailscale up \
       --hostname="${tailscale_hostname}" \
-      --auth-key="${TAILSCALE_AUTHKEY}" \
+      --auth-key="file:${auth_key_file}" \
       ${tailscale_ssh_arg} \
       ${TAILSCALE_EXTRA_ARGS:-}
-  elif [[ -r /dev/tty ]]; then
+  elif has_terminal; then
     ${SUDO} tailscale up \
       --hostname="${tailscale_hostname}" \
       ${tailscale_ssh_arg} \
@@ -93,7 +108,7 @@ connect_tailscale() {
     echo "==> TAILSCALE_AUTHKEY not set and no TTY is available; skipping tailscale up"
     echo "    Re-run on the server with: sudo tailscale up --hostname=${tailscale_hostname}"
   fi
-}
+)
 
 print_summary() {
   local tailscale_hostname tailscale_ip
@@ -114,7 +129,14 @@ print_summary() {
   echo "  Portainer agent: curl -fsSL ${RAW_BASE}/scripts/setup-portainer-agent.sh | bash"
 }
 
-install_base_packages
-install_tailscale
-connect_tailscale
-print_summary
+main() {
+  prepare_host
+  install_base_packages
+  install_tailscale
+  connect_tailscale
+  print_summary
+}
+
+if [[ "${BASH_SOURCE[0]:-${0}}" == "${0}" ]]; then
+  main "$@"
+fi
